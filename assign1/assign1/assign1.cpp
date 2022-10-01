@@ -30,11 +30,11 @@ int g_iRightMouseButton = 0;
 typedef enum { ROTATE, TRANSLATE, SCALE } CONTROLSTATE;
 CONTROLSTATE g_ControlState = ROTATE;
 
-typedef enum { MY_POINT, MY_LINE, MY_TRIANGLE, MY_LINE_TRIANGLE, MY_COLORED_TRIANGLES } DISPLAYTYPE;
+typedef enum { MY_POINT, MY_LINE, MY_TRIANGLE, MY_LINE_TRIANGLE, MY_COLORED_TRIANGLE, MY_TEXTURE_TRIANGLE } DISPLAYTYPE;
 DISPLAYTYPE displayType = MY_POINT;
 
 typedef enum {GRAYSCALE, RGBSCALE} COLORSTATE;
-COLORSTATE colorState = GRAYSCALE;
+COLORSTATE colorState = RGBSCALE;
 
 /* State of the world */
 float g_vLandRotate[3] = { 0.0, 0.0, 0.0 };
@@ -43,6 +43,9 @@ float g_vLandScale[3] = { 1.0, 1.0, 1.0 };
 
 CImg<unsigned char>* g_pHeightData;
 CImg<unsigned char>* coloredImage;
+
+CImg<unsigned char>* textureImage;
+static GLuint texName;
 
 /* Window properties*/
 int windowWidth = 1280;
@@ -54,8 +57,10 @@ vector<GLfloat> pointVertex, pointColor;
 vector<GLfloat> lineVertex, lineColor;
 vector<GLfloat> triangleVertex, triangleColor;
 vector<GLfloat> darkLineColor;
-vector<GLfloat> coloredTriangleColor; 
+vector<GLfloat> coloredTriangleColor;
+vector<GLfloat> textureVertex, textureCoor;
 bool coloredImageLoaded = false;
+bool textureImageLoaded = false;
 
 GLfloat mirrorTransfrom[] = { -1,0,0,0,
 							   0,1,0,0,
@@ -99,17 +104,17 @@ void readVertex()
 			GLfloat x, y, z, x1, y1, z1, x2, y2, z2, x3, y3, z3;
 			GLfloat r, g, b, r1, g1, b1, r2, g2, b2, r3, g3, b3;
 
-			x = float(w) / width;
-			y = float(h) / height;
+			x = w;
+			y = h;
 
-			x1 = float(w + 1) / width;
-			y1 = float(h) / height;
+			x1 = w + 1;
+			y1 = h;
 
-			x2 = float(w) / width;
-			y2 = float(h + 1) / height;
+			x2 = w;
+			y2 = h + 1;
 
-			x3 = float(w + 1) / width;
-			y3 = float(h + 1) / height;
+			x3 = w + 1;
+			y3 = h + 1;
 
 			if (colorState == GRAYSCALE)
 			{
@@ -368,6 +373,42 @@ void readVertex()
 				coloredTriangleColor.push_back(z3 * _g3);
 				coloredTriangleColor.push_back(z3 * _b3);
 			}
+
+			// Read texture Vertex
+			if (colorState == GRAYSCALE && textureImageLoaded)
+			{
+				textureVertex.push_back(x);
+				textureVertex.push_back(y);
+				textureVertex.push_back(z);
+
+				textureVertex.push_back(x1);
+				textureVertex.push_back(y1);
+				textureVertex.push_back(z1);
+
+				textureVertex.push_back(x3);
+				textureVertex.push_back(y3);
+				textureVertex.push_back(z3);
+
+				textureVertex.push_back(x2);
+				textureVertex.push_back(y2);
+				textureVertex.push_back(z2);
+			}
+			
+			// Read texture coordinates
+			if (colorState == GRAYSCALE && textureImageLoaded)
+			{
+				textureCoor.push_back(x /(width-1));
+				textureCoor.push_back(y /(height - 1));
+
+				textureCoor.push_back(x1 / (width - 1));
+				textureCoor.push_back(y1 / (height - 1));
+
+				textureCoor.push_back(x3 / (width - 1));
+				textureCoor.push_back(y3 / (height - 1));
+
+				textureCoor.push_back(x2 / (width - 1));
+				textureCoor.push_back(y2 / (height - 1));
+			}
 		}
 	}
 }
@@ -378,9 +419,23 @@ void myinit()
 	/* setup gl view here */
 	glClearColor(0.0, 0.0, 0.0, 0.0);
 	glEnable(GL_DEPTH_TEST);
-
+	// enable vertex and color array for rendering
 	glEnableClientState(GL_VERTEX_ARRAY);
 	glEnableClientState(GL_COLOR_ARRAY);
+	// enable texture array for texture mapping
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+	glGenTextures(1, &texName);
+	glBindTexture(GL_TEXTURE_2D, texName);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+		GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+		GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, textureImage->width(),
+		textureImage->height(), 0, GL_RGB, GL_UNSIGNED_BYTE,
+		textureImage->data());
+	//read vertex data 
 	readVertex();
 }
 
@@ -395,17 +450,19 @@ void display()
 		0.0, 0.0, 0.0,
 		0.0, 1.0, 0.0);
 
+	// mouse control
 	glTranslatef(g_vLandTranslate[0], g_vLandTranslate[1], g_vLandTranslate[2]);
 	glRotatef(g_vLandRotate[0], 1.0, 0.0, 0.0);
 	glRotatef(g_vLandRotate[1], 0.0, 1.0, 0.0);
 	glRotatef(g_vLandRotate[2], 0.0, 0.0, 1.0);
 	glScalef(g_vLandScale[0], g_vLandScale[1], g_vLandScale[2]);
 
-
+	// adjust view
 	glMultMatrixf(mirrorTransfrom);
 	glRotatef(180, 0, 0, 1);
-	glScalef(2.0, 2.0, 0.5);
-	glTranslatef(-0.5, -0.5, 0);
+	glScalef(1.6f, 1.6f, 1);
+	glScalef(1.0f/g_pHeightData->width(), 1.0f/g_pHeightData->height(), 0.7);
+	glTranslatef(-g_pHeightData->width()/2, -g_pHeightData->height()/2, 0);
 
 	switch (displayType)
 	{
@@ -437,10 +494,23 @@ void display()
 		glDrawArrays(GL_TRIANGLES, 0, triangleVertex.size() / 3);
 		break;
 
-	case MY_COLORED_TRIANGLES:
+	case MY_COLORED_TRIANGLE:
 		glVertexPointer(3, GL_FLOAT, 0, triangleVertex.data());
 		glColorPointer(3, GL_FLOAT, 0, coloredTriangleColor.data());
 		glDrawArrays(GL_TRIANGLES, 0, triangleVertex.size() / 3);
+		break;
+
+	case MY_TEXTURE_TRIANGLE:
+		glEnable(GL_TEXTURE_2D);
+		glDisable(GL_COLOR_ARRAY);
+
+		//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		glVertexPointer(3, GL_FLOAT, 0, textureVertex.data());
+		glTexCoordPointer(2, GL_FLOAT, 0, textureCoor.data());
+		glDrawArrays(GL_QUADS, 0, textureVertex.size() / 3);
+
+		glEnable(GL_COLOR_ARRAY);
+		glDisable(GL_TEXTURE_2D);
 		break;
 	}
 
@@ -569,7 +639,11 @@ void keyboard(unsigned char key, int x, int y)
 		break;
 	case '5':
 		if (colorState == GRAYSCALE && coloredImageLoaded)
-			displayType = MY_COLORED_TRIANGLES;
+			displayType = MY_COLORED_TRIANGLE;
+		break;
+	case '6':
+		if (colorState == GRAYSCALE && textureImageLoaded)
+			displayType = MY_TEXTURE_TRIANGLE;
 		break;
 	default:
 		break;
@@ -621,6 +695,18 @@ int main(int argc, char* argv[])
 			exit(1);
 		}
 		coloredImageLoaded = true;
+	}
+
+	if (argc > 3)
+	{
+		cout << "Loading texture image..." << endl;
+		textureImage = new CImg<unsigned char>((char*)argv[3]);
+		if (!textureImage)
+		{
+			printf("error reading %s.\n", argv[3]);
+			exit(1);
+		}
+		textureImageLoaded = true;
 	}
 
 	cout << "Initializing OpenGL... " << endl;
