@@ -138,7 +138,10 @@ Vec3f dot(const Vec3f& a, const Vec3f& b)
 	Vec3f p;
 	return p;
 }
-
+GLfloat distance(const Vec3f& a, const Vec3f& b)
+{
+	return sqrt(pow(a.x - b.x, 2) + pow(a.y - b.y, 2) + pow(a.z - b.z, 2));
+}
 /* texutres */
 GLuint g_textures[6];
 const GLfloat g_border = 256;
@@ -149,6 +152,7 @@ vector<Vec2f> g_envGTextureVertex, g_envSTextureVertex, g_envLTextureVertex, g_e
 Spline* g_Splines;
 int g_iNumOfSplines;
 const GLfloat g_splineStep = 0.005f;
+const GLfloat g_maxLine = 0.05f;
 const GLfloat g_S = 0.5f;
 const GLfloat g_railSize = 0.015f, g_railWidth = 0.12f;
 vector<Vec3f> g_splineVertex, g_splineTangent, g_splineNormal, g_splineBinormal, g_splineColor;
@@ -164,7 +168,7 @@ vector<Vec3f> g_objVertex, g_objColor, g_objNormal;
 enum CameraState{CAMERA_FREE, CAMERA_FIXED};
 CameraState g_cameraState = CAMERA_FREE;
 bool g_isRunning = false;
-GLfloat g_cameraPos = 0;
+GLfloat g_u = 0;
 Vec3f velocity;
 vector<GLfloat> g_lookAt = { 0,0,-0.5,0,0,0,0,1,0 };
 
@@ -430,6 +434,36 @@ void envGenerator()
 		0, GL_RGB, GL_UNSIGNED_BYTE, backImage.data);
 }
 
+void subDivide(GLfloat u0, GLfloat u1, GLfloat maxi, Vec3f & cp0, Vec3f& cp1, Vec3f& cp2, Vec3f& cp3)
+{
+	GLfloat umid = (u0 + u1) / 2;
+	Vec3f p0;
+	GLfloat u0u0 = u0 * u0, u0u0u0 = u0 * u0 * u0;
+	p0.x = g_S * ((2 * cp1.x) + (-cp0.x + cp2.x) * u0 + (2 * cp0.x - 5 * cp1.x + 4 * cp2.x - cp3.x) * u0u0 + (-cp0.x + 3 * cp1.x - 3 * cp2.x + cp3.x) * u0u0u0);
+	p0.y = g_S * ((2 * cp1.y) + (-cp0.y + cp2.y) * u0 + (2 * cp0.y - 5 * cp1.y + 4 * cp2.y - cp3.y) * u0u0 + (-cp0.y + 3 * cp1.y - 3 * cp2.y + cp3.y) * u0u0u0);
+	p0.z = g_S * ((2 * cp1.z) + (-cp0.z + cp2.z) * u0 + (2 * cp0.z - 5 * cp1.z + 4 * cp2.z - cp3.z) * u0u0 + (-cp0.z + 3 * cp1.z - 3 * cp2.z + cp3.z) * u0u0u0);
+
+	Vec3f p1;
+	GLfloat u1u1 = u1 * u1, u1u1u1 = u1 * u1 * u1;
+	p1.x = g_S * ((2 * cp1.x) + (-cp0.x + cp2.x) * u1 + (2 * cp0.x - 5 * cp1.x + 4 * cp2.x - cp3.x) * u1u1 + (-cp0.x + 3 * cp1.x - 3 * cp2.x + cp3.x) * u1u1u1);
+	p1.y = g_S * ((2 * cp1.y) + (-cp0.y + cp2.y) * u1 + (2 * cp0.y - 5 * cp1.y + 4 * cp2.y - cp3.y) * u1u1 + (-cp0.y + 3 * cp1.y - 3 * cp2.y + cp3.y) * u1u1u1);
+	p1.z = g_S * ((2 * cp1.z) + (-cp0.z + cp2.z) * u1 + (2 * cp0.z - 5 * cp1.z + 4 * cp2.z - cp3.z) * u1u1 + (-cp0.z + 3 * cp1.z - 3 * cp2.z + cp3.z) * u1u1u1);
+
+	if (distance(p0, p1) > maxi)
+	{
+		subDivide(u0, umid, g_maxLine, cp0, cp1, cp2, cp3);
+		subDivide(umid, u1, g_maxLine, cp0, cp1, cp2, cp3);
+	}
+	else
+	{
+		g_splineVertex.push_back(p0);
+		g_splineVertex.push_back(p1);
+		Vec3f color(1.0, 1.0, 1.0);
+		g_splineColor.push_back(color);
+		g_splineColor.push_back(color);
+	}
+}
+
 void splineGenerator()
 {
 	// Generate spline points
@@ -457,9 +491,19 @@ void splineGenerator()
 				Vec3f color(1.0, 1.0, 1.0);
 				g_splineColor.push_back(color);
 			}
+			
+			// Sub Division
+			//Vec3f cp0 = g_Splines[i].points[j];
+			//Vec3f cp1 = g_Splines[i].points[j + 1];
+			//Vec3f cp2 = g_Splines[i].points[j + 2];
+			//Vec3f cp3 = g_Splines[i].points[j + 3];
+			//subDivide(0, 1, g_maxLine, cp0, cp1, cp2, cp3);
 		}
 	}
+}
 
+void railGenerator()
+{
 	// Generate spline rail
 	for (int i = 0; i < g_splineVertex.size() - 3; ++i) {
 
@@ -517,18 +561,66 @@ void splineGenerator()
 		// back
 		g_lRailVertex.push_back(v6); g_lRailVertex.push_back(v5); g_lRailVertex.push_back(v7); g_lRailVertex.push_back(v7); g_lRailVertex.push_back(v5); g_lRailVertex.push_back(v4);
 		
+		p1 = cp0 + offset + n * 0.02;
+		p2 = cp3 + offset + n * 0.02;
+		v0 = { p1.x + g_railSize * (-n.x + b.x), p1.y + g_railSize * (-n.y + b.y), p1.z + g_railSize * 0.2f * (-n.z + b.z) };
+		v1 = { p1.x + g_railSize * (n.x + b.x), p1.y + g_railSize * (n.y + b.y), p1.z + g_railSize * 0.2f * (n.z + b.z) };
+		v2 = { p1.x + g_railSize * (n.x - b.x), p1.y + g_railSize * (n.y - b.y), p1.z + g_railSize * 0.2f * (n.z - b.z) };
+		v3 = { p1.x + g_railSize * (-n.x - b.x), p1.y + g_railSize * (-n.y - b.y), p1.z + g_railSize * 0.2f * (-n.z - b.z) };
+		v4 = { p2.x + g_railSize * (-n.x + b.x), p2.y + g_railSize * (-n.y + b.y), p2.z + g_railSize * 0.2f * (-n.z + b.z) };
+		v5 = { p2.x + g_railSize * (n.x + b.x), p2.y + g_railSize * (n.y + b.y), p2.z + g_railSize * 0.2f * (n.z + b.z) };
+		v6 = { p2.x + g_railSize * (n.x - b.x), p2.y + g_railSize * (n.y - b.y), p2.z + g_railSize * 0.2f * (n.z - b.z) };
+		v7 = { p2.x + g_railSize * (-n.x - b.x), p2.y + g_railSize * (-n.y - b.y), p2.z + g_railSize * 0.2f *  (-n.z - b.z) };
+
+		// front
+		g_lRailVertex.push_back(v2); g_lRailVertex.push_back(v1); g_lRailVertex.push_back(v3); g_lRailVertex.push_back(v3); g_lRailVertex.push_back(v1); g_lRailVertex.push_back(v0);
+		// left
+		g_lRailVertex.push_back(v6); g_lRailVertex.push_back(v2); g_lRailVertex.push_back(v7); g_lRailVertex.push_back(v7); g_lRailVertex.push_back(v2); g_lRailVertex.push_back(v3);
+		// right
+		g_lRailVertex.push_back(v1); g_lRailVertex.push_back(v5); g_lRailVertex.push_back(v0); g_lRailVertex.push_back(v0); g_lRailVertex.push_back(v5); g_lRailVertex.push_back(v4);
+		// up
+		g_lRailVertex.push_back(v6); g_lRailVertex.push_back(v5); g_lRailVertex.push_back(v2); g_lRailVertex.push_back(v2); g_lRailVertex.push_back(v5); g_lRailVertex.push_back(v1);
+		// down
+		g_lRailVertex.push_back(v7); g_lRailVertex.push_back(v4); g_lRailVertex.push_back(v3); g_lRailVertex.push_back(v3); g_lRailVertex.push_back(v4); g_lRailVertex.push_back(v0);
+		// back
+		g_lRailVertex.push_back(v6); g_lRailVertex.push_back(v5); g_lRailVertex.push_back(v7); g_lRailVertex.push_back(v7); g_lRailVertex.push_back(v5); g_lRailVertex.push_back(v4);
+
 
 		// right rail
 		p1 = cp0 - offset;
 		p2 = cp3 - offset;
-		v0 = { p1.x + g_railSize * (-n.x + b.x), p1.y + g_railSize * (-n.y + b.y), p1.z + g_railSize * (-n.z + b.z) };
-		v1 = { p1.x + g_railSize * (n.x + b.x), p1.y + g_railSize * (n.y + b.y), p1.z + g_railSize * (n.z + b.z) };
-		v2 = { p1.x + g_railSize * (n.x - b.x), p1.y + g_railSize * (n.y - b.y), p1.z + g_railSize * (n.z - b.z) };
-		v3 = { p1.x + g_railSize * (-n.x - b.x), p1.y + g_railSize * (-n.y - b.y), p1.z + g_railSize * (-n.z - b.z) };
-		v4 = { p2.x + g_railSize * (-n.x + b.x), p2.y + g_railSize * (-n.y + b.y), p2.z + g_railSize * (-n.z + b.z) };
-		v5 = { p2.x + g_railSize * (n.x + b.x), p2.y + g_railSize * (n.y + b.y), p2.z + g_railSize * (n.z + b.z) };
-		v6 = { p2.x + g_railSize * (n.x - b.x), p2.y + g_railSize * (n.y - b.y), p2.z + g_railSize * (n.z - b.z) };
-		v7 = { p2.x + g_railSize * (-n.x - b.x), p2.y + g_railSize * (-n.y - b.y), p2.z + g_railSize * (-n.z - b.z) };
+		v0 = { p1.x + g_railSize * 0.2f * (-n.x + b.x), p1.y + g_railSize * (-n.y + b.y), p1.z + g_railSize * (-n.z + b.z) };
+		v1 = { p1.x + g_railSize * 0.2f * (n.x + b.x), p1.y + g_railSize * (n.y + b.y), p1.z + g_railSize * (n.z + b.z) };
+		v2 = { p1.x + g_railSize * 0.2f * (n.x - b.x), p1.y + g_railSize * (n.y - b.y), p1.z + g_railSize * (n.z - b.z) };
+		v3 = { p1.x + g_railSize * 0.2f * (-n.x - b.x), p1.y + g_railSize * (-n.y - b.y), p1.z + g_railSize * (-n.z - b.z) };
+		v4 = { p2.x + g_railSize * 0.2f * (-n.x + b.x), p2.y + g_railSize * (-n.y + b.y), p2.z + g_railSize * (-n.z + b.z) };
+		v5 = { p2.x + g_railSize * 0.2f * (n.x + b.x), p2.y + g_railSize * (n.y + b.y), p2.z + g_railSize * (n.z + b.z) };
+		v6 = { p2.x + g_railSize * 0.2f * (n.x - b.x), p2.y + g_railSize * (n.y - b.y), p2.z + g_railSize * (n.z - b.z) };
+		v7 = { p2.x + g_railSize * 0.2f * (-n.x - b.x), p2.y + g_railSize * (-n.y - b.y), p2.z + g_railSize * (-n.z - b.z) };
+
+		// front
+		g_rRailVertex.push_back(v2); g_rRailVertex.push_back(v1); g_rRailVertex.push_back(v3); g_rRailVertex.push_back(v3); g_rRailVertex.push_back(v1); g_rRailVertex.push_back(v0);
+		// left
+		g_rRailVertex.push_back(v6); g_rRailVertex.push_back(v2); g_rRailVertex.push_back(v7); g_rRailVertex.push_back(v7); g_rRailVertex.push_back(v2); g_rRailVertex.push_back(v3);
+		// right
+		g_rRailVertex.push_back(v1); g_rRailVertex.push_back(v5); g_rRailVertex.push_back(v0); g_rRailVertex.push_back(v0); g_rRailVertex.push_back(v5); g_rRailVertex.push_back(v4);
+		// up
+		g_rRailVertex.push_back(v6); g_rRailVertex.push_back(v5); g_rRailVertex.push_back(v2); g_rRailVertex.push_back(v2); g_rRailVertex.push_back(v5); g_rRailVertex.push_back(v1);
+		// down
+		g_rRailVertex.push_back(v7); g_rRailVertex.push_back(v4); g_rRailVertex.push_back(v3); g_rRailVertex.push_back(v3); g_rRailVertex.push_back(v4); g_rRailVertex.push_back(v0);
+		// back
+		g_rRailVertex.push_back(v6); g_rRailVertex.push_back(v5); g_rRailVertex.push_back(v7); g_rRailVertex.push_back(v7); g_rRailVertex.push_back(v5); g_rRailVertex.push_back(v4);
+
+		p1 = cp0 - offset + n * 0.01;
+		p2 = cp3 - offset + n * 0.01;
+		v0 = { p1.x + g_railSize * 0.2f * (-n.x + b.x), p1.y + g_railSize  * (-n.y + b.y), p1.z + g_railSize * 0.2f * (-n.z + b.z) };
+		v1 = { p1.x + g_railSize * 0.2f * (n.x + b.x), p1.y + g_railSize * (n.y + b.y), p1.z + g_railSize * 0.2f *  (n.z + b.z) };
+		v2 = { p1.x + g_railSize * 0.2f * (n.x - b.x), p1.y + g_railSize * (n.y - b.y), p1.z + g_railSize * 0.2f * (n.z - b.z) };
+		v3 = { p1.x + g_railSize * 0.2f * (-n.x - b.x), p1.y + g_railSize * (-n.y - b.y), p1.z + g_railSize * 0.2f * (-n.z - b.z) };
+		v4 = { p2.x + g_railSize * 0.2f * (-n.x + b.x), p2.y + g_railSize * (-n.y + b.y), p2.z + g_railSize * 0.2f * (-n.z + b.z) };
+		v5 = { p2.x + g_railSize * 0.2f * (n.x + b.x), p2.y + g_railSize * (n.y + b.y), p2.z + g_railSize * 0.2f * (n.z + b.z) };
+		v6 = { p2.x + g_railSize * 0.2f * (n.x - b.x), p2.y + g_railSize * (n.y - b.y), p2.z + g_railSize * 0.2f * (n.z - b.z) };
+		v7 = { p2.x + g_railSize * 0.2f * (-n.x - b.x), p2.y + g_railSize * (-n.y - b.y), p2.z + g_railSize * 0.2f * (-n.z - b.z) };
 
 		// front
 		g_rRailVertex.push_back(v2); g_rRailVertex.push_back(v1); g_rRailVertex.push_back(v3); g_rRailVertex.push_back(v3); g_rRailVertex.push_back(v1); g_rRailVertex.push_back(v0);
@@ -573,7 +665,7 @@ void splineGenerator()
 		}
 
 		// supporter
-		if (i % 200 == 0)
+		if (i % 300 == 0)
 		{
 			p1 = cp0 + offset;
 			p2 = Vec3f(p1.x, -g_border, p1.z);
@@ -653,8 +745,20 @@ void splineGenerator()
 		g_lRailNormal.push_back(ln6); g_lRailNormal.push_back(ln5); g_lRailNormal.push_back(ln2); g_lRailNormal.push_back(ln2); g_lRailNormal.push_back(ln5); g_lRailNormal.push_back(ln1);
 		g_lRailNormal.push_back(ln7); g_lRailNormal.push_back(ln4); g_lRailNormal.push_back(ln3); g_lRailNormal.push_back(ln3); g_lRailNormal.push_back(ln4); g_lRailNormal.push_back(ln0);
 		g_lRailNormal.push_back(ln6); g_lRailNormal.push_back(ln5); g_lRailNormal.push_back(ln7); g_lRailNormal.push_back(ln7); g_lRailNormal.push_back(ln5); g_lRailNormal.push_back(ln4);
+		g_lRailNormal.push_back(ln2); g_lRailNormal.push_back(ln1); g_lRailNormal.push_back(ln3); g_lRailNormal.push_back(ln3); g_lRailNormal.push_back(ln1); g_lRailNormal.push_back(ln0);
+		g_lRailNormal.push_back(ln6); g_lRailNormal.push_back(ln2); g_lRailNormal.push_back(ln7); g_lRailNormal.push_back(ln7); g_lRailNormal.push_back(ln2); g_lRailNormal.push_back(ln3);
+		g_lRailNormal.push_back(ln1); g_lRailNormal.push_back(ln5); g_lRailNormal.push_back(ln0); g_lRailNormal.push_back(ln0); g_lRailNormal.push_back(ln5); g_lRailNormal.push_back(ln4);
+		g_lRailNormal.push_back(ln6); g_lRailNormal.push_back(ln5); g_lRailNormal.push_back(ln2); g_lRailNormal.push_back(ln2); g_lRailNormal.push_back(ln5); g_lRailNormal.push_back(ln1);
+		g_lRailNormal.push_back(ln7); g_lRailNormal.push_back(ln4); g_lRailNormal.push_back(ln3); g_lRailNormal.push_back(ln3); g_lRailNormal.push_back(ln4); g_lRailNormal.push_back(ln0);
+		g_lRailNormal.push_back(ln6); g_lRailNormal.push_back(ln5); g_lRailNormal.push_back(ln7); g_lRailNormal.push_back(ln7); g_lRailNormal.push_back(ln5); g_lRailNormal.push_back(ln4);
 		
 		// right
+		g_rRailNormal.push_back(ln2); g_rRailNormal.push_back(ln1); g_rRailNormal.push_back(ln3); g_rRailNormal.push_back(ln3); g_rRailNormal.push_back(ln1); g_rRailNormal.push_back(ln0);
+		g_rRailNormal.push_back(ln6); g_rRailNormal.push_back(ln2); g_rRailNormal.push_back(ln7); g_rRailNormal.push_back(ln7); g_rRailNormal.push_back(ln2); g_rRailNormal.push_back(ln3);
+		g_rRailNormal.push_back(ln1); g_rRailNormal.push_back(ln5); g_rRailNormal.push_back(ln0); g_rRailNormal.push_back(ln0); g_rRailNormal.push_back(ln5); g_rRailNormal.push_back(ln4);
+		g_rRailNormal.push_back(ln6); g_rRailNormal.push_back(ln5); g_rRailNormal.push_back(ln2); g_rRailNormal.push_back(ln2); g_rRailNormal.push_back(ln5); g_rRailNormal.push_back(ln1);
+		g_rRailNormal.push_back(ln7); g_rRailNormal.push_back(ln4); g_rRailNormal.push_back(ln3); g_rRailNormal.push_back(ln3); g_rRailNormal.push_back(ln4); g_rRailNormal.push_back(ln0);
+		g_rRailNormal.push_back(ln6); g_rRailNormal.push_back(ln5); g_rRailNormal.push_back(ln7); g_rRailNormal.push_back(ln7); g_rRailNormal.push_back(ln5); g_rRailNormal.push_back(ln4);
 		g_rRailNormal.push_back(ln2); g_rRailNormal.push_back(ln1); g_rRailNormal.push_back(ln3); g_rRailNormal.push_back(ln3); g_rRailNormal.push_back(ln1); g_rRailNormal.push_back(ln0);
 		g_rRailNormal.push_back(ln6); g_rRailNormal.push_back(ln2); g_rRailNormal.push_back(ln7); g_rRailNormal.push_back(ln7); g_rRailNormal.push_back(ln2); g_rRailNormal.push_back(ln3);
 		g_rRailNormal.push_back(ln1); g_rRailNormal.push_back(ln5); g_rRailNormal.push_back(ln0); g_rRailNormal.push_back(ln0); g_rRailNormal.push_back(ln5); g_rRailNormal.push_back(ln4);
@@ -711,13 +815,14 @@ void myinit()
 	glEnableClientState(GL_NORMAL_ARRAY);
 
 	splineGenerator();
+	railGenerator();
 	envGenerator();
 }
 
 void displayFunc()
 {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	
+
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	// Mouse control Transformation
@@ -781,46 +886,50 @@ void displayFunc()
 	GLfloat light_diffuse1[] = { 0.0, 0.0, 1.0, 1.0 };
 	glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient1);
 	glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse1);
-	
+
 	// rail
 	glVertexPointer(3, GL_FLOAT, 0, g_lRailVertex.data());
-	glColorPointer(3, GL_FLOAT, 0, g_lRailColor.data());
 	glNormalPointer(GL_FLOAT, 0, g_lRailNormal.data());
 	glDrawArrays(GL_TRIANGLES, 0, g_lRailVertex.size());
 
 	glVertexPointer(3, GL_FLOAT, 0, g_rRailVertex.data());
-	glColorPointer(3, GL_FLOAT, 0, g_rRailColor.data());
 	glNormalPointer(GL_FLOAT, 0, g_rRailNormal.data());
 	glDrawArrays(GL_TRIANGLES, 0, g_rRailVertex.size());
 
+	GLfloat light_ambient2[] = { 0.0, 1.0, 0.0, 1.0 };
+	GLfloat light_diffuse2[] = { 0.0, 1.0, 0.0, 1.0 };
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse2);
+	glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient2);
 	glVertexPointer(3, GL_FLOAT, 0, g_mRailVertex.data());
 	glColorPointer(3, GL_FLOAT, 0, g_mRailColor.data());
 	glNormalPointer(GL_FLOAT, 0, g_mRailNormal.data());
 	glDrawArrays(GL_TRIANGLES, 0, g_mRailVertex.size());
 
 	// supporter
-	GLfloat light_ambient2[] = { 1.0, 0.0, 0.0, 1.0 };
-	GLfloat light_diffuse2[] = { 1.0, 0.0, 0.0, 1.0 };
-	glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse2);
-	glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient2);
+	//GLfloat light_ambient3[] = { 1.0, 0.0, 0.0, 1.0 };
+	//GLfloat light_diffuse3[] = { 1.0, 0.0, 0.0, 1.0 };
+	//glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse3);
+	//glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient3);
 
-	glVertexPointer(3, GL_FLOAT, 0, g_sRailVertex.data());
-	glColorPointer(3, GL_FLOAT, 0, g_sRailColor.data());
-	glNormalPointer(GL_FLOAT, 0, g_sRailNormal.data());
-	glDrawArrays(GL_TRIANGLES, 0, g_sRailVertex.size());
+	//glVertexPointer(3, GL_FLOAT, 0, g_sRailVertex.data());
+	//glColorPointer(3, GL_FLOAT, 0, g_sRailColor.data());
+	//glNormalPointer(GL_FLOAT, 0, g_sRailNormal.data());
+	//glDrawArrays(GL_TRIANGLES, 0, g_sRailVertex.size());
 
 	// minecart
-	GLfloat light_ambient3[] = { 1.0, 1.0, 1.0, 1.0 };
-	GLfloat light_diffuse3[] = { 1.0, 1.0, 1.0, 1.0 };
-	glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse3);
-	glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient3);
-	glLoadIdentity();
-	glTranslatef(0.0f, -0.2f, -0.4f);
-	glScalef(1.5, 1.5, 1.5);
-	glVertexPointer(3, GL_FLOAT, 0, g_objVertex.data());
-	glNormalPointer(GL_FLOAT, 0, g_objNormal.data());
-	glDrawArrays(GL_TRIANGLES, 0, g_objVertex.size());
-
+	if(g_cameraState == CAMERA_FIXED)
+	{ 
+		GLfloat light_ambient4[] = { 1.0, 1.0, 1.0, 1.0 };
+		GLfloat light_diffuse4[] = { 1.0, 1.0, 1.0, 1.0 };
+		glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse4);
+		glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient4);
+		glLoadIdentity();
+		glTranslatef(0.0f, -0.3f, -0.2f);
+		glScalef(0.3, 0.3, 0.3);
+		glVertexPointer(3, GL_FLOAT, 0, g_objVertex.data());
+		glNormalPointer(GL_FLOAT, 0, g_objNormal.data());
+		glDrawArrays(GL_TRIANGLES, 0, g_objVertex.size());
+	}
 	glDisable(GL_LIGHTING);
 
 
@@ -842,7 +951,7 @@ void displayFunc()
 
 void resetCamera()
 {
-	g_cameraPos = 0;
+	g_u = 0;
 	g_vLandRotate[0] = 0.0; g_vLandRotate[1] = 0.0; g_vLandRotate[2] = 0.0;
 	g_vLandTranslate[0] = 0.0; g_vLandTranslate[1] = 0.0; g_vLandTranslate[2] = 0.0;
 	g_vLandScale[0] = 1.0; g_vLandScale[1] = 1.0; g_vLandScale[2] = 1.0;
@@ -852,14 +961,12 @@ void idleFunc(int)
 {
 	// make the screen update
 	glutPostRedisplay();
-	if (g_isRunning && g_cameraPos < g_splineVertex.size() - 3)
+	if (g_isRunning && g_u < g_splineVertex.size() - 3)
 	{
-		updateCamera(g_cameraPos, g_splineStep);
+		updateCamera(g_u, g_splineStep);
 		// realistic speed control
-		if (velocity.y < 0)
-			g_cameraPos += 2;
-		else
-			g_cameraPos += 1;
+		GLfloat nextU;
+		g_u++;
 	}
 	glutTimerFunc(1000 / g_FPS, idleFunc, 0);
 }
