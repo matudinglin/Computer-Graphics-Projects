@@ -1,17 +1,17 @@
-# Overview
+# OVERVIEW
 CSCI 420 assignment2 by Yao Lin
 
 Complete **all** basic requirements, animation requirements and **24 points** extra requirements.
 
 Open Source on github: https://github.com/matudinglin/Computer-Graphics-Projects
 
-# Usage
+# USAGE
 - Press <kbd> 1 </kbd> to reset camera, Press <kbd> 2 </kbd> to run or stop.
 - Use <kbd> Mouse </kbd> to rotate
 - Use <kbd> Shift </kbd>, <kbd> Ctrl </kbd> and <kbd> Alt </kbd>  to change view.
 - Use <kbd> Esc </kbd> to quit.
 
-# Requirments Check List
+# REQUIRMENTS
 ## Basic Requirements Check List
 - Complete all levels
   - Level 1: use brute force to properly render Catmull-Rom splines to represent track.
@@ -36,7 +36,7 @@ Open Source on github: https://github.com/matudinglin/Computer-Graphics-Projects
 - Draw splines using recursive subdivision instead of using brute force.
 - Load and render a Stanford Bunny into the scene.
 
-# Implementation
+# IMPLEMENTATION
 ## Helper functions
 - struct Vec3f: 3 float value vector which supports most vector operation, including addition, subtraction, multiplication and normalization etc.
 - struct Vec2f: 2 float value vector which supports most vector operation.
