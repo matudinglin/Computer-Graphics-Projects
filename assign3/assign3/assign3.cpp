@@ -317,38 +317,40 @@ Vec3d computeSpheresIntersection(const Ray& ray, Vec3d& color, bool &hitAnObject
 		if (ray.getHitPosition(spheres[i], newHitPos) && newHitPos.z > hitPos.z)
 		{
 			//clog << "Hit Sphere: " << i << endl;
-			//color = Vec3d();
+			color = Vec3d();
 			for (int j = 0; j < num_lights; ++j)
 			{
-				//// determine if the hit point is in shadow
-				//Vec3d lightPos(lights[j].position[0], lights[j].position[1], lights[j].position[2]);
-				//Vec3d shadowRayDir = (lightPos - hitPos).normalized();
-				//Ray shadowRay(hitPos, shadowRayDir);
-				//bool inShadow = false;
-				//for (int k = 0; k < num_spheres; ++k)
-				//{
-				//	if (shadowRay.getHitPosition(spheres[k], Vec3d()))
-				//	{
-				//		inShadow = true;
-				//		break;
-				//	}
-				//}
-				//for (int k = 0; k < num_triangles; ++k)
-				//{
-				//	if (shadowRay.getHitPosition(triangles[k], Vec3d()))
-				//	{
-				//		inShadow = true;
-				//		break;
-				//	}
-				//}
-				//// if not, use Phong shading
-				//if (!inShadow)
-					color = PhongShading(spheres[i], newHitPos, lights[j]);
+				// determine if the hit point is in shadow
+				Vec3d lightPos(lights[j].position[0], lights[j].position[1], lights[j].position[2]);
+				Vec3d shadowRayDir = (lightPos - newHitPos).normalized();
+				Ray shadowRay(newHitPos, shadowRayDir);
+				bool inShadow = false;
+				Vec3d shadowHitPos;
+				for (int k = 0; k < num_spheres; ++k)
+				{
+					if (shadowRay.getHitPosition(spheres[k], shadowHitPos) && k!=i
+						&& (lightPos - newHitPos).length() > (shadowHitPos - newHitPos).length())
+					{
+						inShadow = true;
+						break;
+					}
+				}
+				for (int k = 0; k < num_triangles; ++k)
+				{
+					if (shadowRay.getHitPosition(triangles[k], shadowHitPos)
+						&& (lightPos - newHitPos).length() > (shadowHitPos - newHitPos).length())
+					{
+						inShadow = true;
+						break;
+					}
+				}
+				// if not, use Phong shading
+				if (!inShadow)
+					color += PhongShading(spheres[i], newHitPos, lights[j]);
 			}
 			hitAnObject = true;
 			hitPos = newHitPos;
 		}
-
 	}
 	return color;
 }
@@ -361,33 +363,36 @@ Vec3d computeTrianglesIntersection(const Ray& ray, Vec3d& color, bool &hitAnObje
 		if (ray.getHitPosition(triangles[i], newHitPos) && newHitPos.z > hitPos.z)
 		{
 			//clog << "Hit Triangles: " << i << endl;
-			//color = Vec3d();
+			color = Vec3d();
 			for (int j = 0; j < num_lights; ++j)
 			{
-				//// determine if the hit point is in shadow
-				//Vec3d lightPos(lights[j].position[0], lights[j].position[1], lights[j].position[2]);
-				//Vec3d shadowRayDir = (lightPos - hitPos).normalized();
-				//Ray shadowRay(hitPos, shadowRayDir);
-				//bool inShadow = false;
-				//for (int k = 0; k < num_spheres; ++k)
-				//{
-				//	if (shadowRay.getHitPosition(spheres[k], Vec3d()))
-				//	{
-				//		inShadow = true;
-				//		break;
-				//	}
-				//}
-				//for (int k = 0; k < num_triangles; ++k)
-				//{
-				//	if (shadowRay.getHitPosition(triangles[k], Vec3d()))
-				//	{
-				//		inShadow = true;
-				//		break;
-				//	}
-				//}
-				//// if not, use Phong shading
-				//if (!inShadow)
-					color = PhongShading(triangles[i], newHitPos, lights[j]);
+				// determine if the hit point is in shadow
+				Vec3d lightPos(lights[j].position[0], lights[j].position[1], lights[j].position[2]);
+				Vec3d shadowRayDir = (lightPos - newHitPos).normalized();
+				Ray shadowRay(newHitPos, shadowRayDir);
+				bool inShadow = false;
+				Vec3d shadowHitPos;
+				for (int k = 0; k < num_spheres; ++k)
+				{
+					if (shadowRay.getHitPosition(spheres[k], shadowHitPos) 
+						&& (lightPos - newHitPos).length() > (shadowHitPos - newHitPos).length())
+					{
+						inShadow = true;
+						break;
+					}
+				}
+				for (int k = 0; k < num_triangles; ++k)
+				{
+					if (shadowRay.getHitPosition(triangles[k], shadowHitPos) && k != i
+						&& (lightPos - newHitPos).length() > (shadowHitPos - newHitPos).length())
+					{
+						inShadow = true;
+						break;
+					}
+				}
+				// if not, use Phong shading
+				if (!inShadow)
+					color += PhongShading(triangles[i], newHitPos, lights[j]);
 			}
 			hitAnObject = true;
 			hitPos = newHitPos;
@@ -401,9 +406,9 @@ Vec3d computeColor(const Ray &ray)
 	Vec3d color(0.0, 0.0, 0.0);
 	bool hitSphere = false, hitTriangle = false;
 	Vec3d hitPos = Vec3d(0.0, 0.0, FURTHEST);
+
 	computeSpheresIntersection(ray, color, hitSphere, hitPos);
 	computeTrianglesIntersection(ray, color, hitTriangle, hitPos);
-
 
 	if (!hitSphere && !hitTriangle)
 		return Vec3d(1.0, 1.0, 1.0);
