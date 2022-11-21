@@ -13,6 +13,7 @@ Name: Yao Lin
 #include <stdio.h>
 #include <string>
 #include <iostream>
+#include <vector>
 
 #include "opencv2/core/core.hpp"
 #include "opencv2/core/utility.hpp"
@@ -25,6 +26,12 @@ Name: Yao Lin
 #define MAX_LIGHTS 10
 
 char* filename = 0;
+
+// Shading Mode Switch
+bool recursiveReflectionOn = false;
+bool antialiasingOn = false; // Supersampling: Multi-Sample Anti-Aliasing (MSAA)
+bool softShadowsOn = false;
+bool motionBlurOn = false;
 
 //different display modes
 #define MODE_DISPLAY 1
@@ -46,6 +53,7 @@ unsigned char buffer[HEIGHT][WIDTH][3];
 using std::cout;
 using std::endl;
 using std::clog;
+using std::vector;
 
 // OpenCV like Vec3d
 struct Vec3d
@@ -401,7 +409,7 @@ Vec3d computeTrianglesIntersection(const Ray& ray, Vec3d& color, bool &hitAnObje
 	return color;
 }
 
-Vec3d computeColor(const Ray &ray)
+Vec3d computeRayColor(const Ray &ray)
 {
 	Vec3d color(0.0, 0.0, 0.0);
 	bool hitSphere = false, hitTriangle = false;
@@ -422,8 +430,8 @@ Ray generateRay(double x, double y)
 	double aspectRatio = (double)WIDTH / (double)HEIGHT;
 	double fov = tan(FOV / 2 * PI / 180.0);
 	// convert coordinate space to [0, 1]
-	x = (x + 0.5) / (double)WIDTH; 
-	y = (y + 0.5) / (double)HEIGHT;
+	x /= (double)WIDTH; 
+	y /= (double)HEIGHT;
 	// convert coordinate space to [-1, 1]
 	x = 2.0 * x - 1;
 	y = 2.0 * y - 1;
@@ -437,6 +445,34 @@ Ray generateRay(double x, double y)
 	return Ray(pos, dir);
 }
 
+Vec3d computePixelColor(double x, double y)
+{
+	if (antialiasingOn)
+	{
+		int sampleRate = 3;
+		int samplePerPixel = sampleRate * sampleRate;
+		vector<Ray> rays(samplePerPixel);
+		Vec3d color(0.0, 0.0, 0.0);
+		double unit = 1.0 / (2.0 * sampleRate);
+		for (int i = 0; i < sampleRate; ++i)
+		{
+			for (int j = 0; j < sampleRate; ++j)
+			{
+				
+				double _x = x + unit * i + unit;
+				double _y = y + unit * j + unit;
+				color += computeRayColor(generateRay(_x, _y));
+			}
+		}
+		return color / samplePerPixel;
+	}
+	else
+	{
+		return computeRayColor(generateRay(x+0.5, y+0.5));
+	}
+
+}
+
 void draw_scene()
 {
 	unsigned int x, y;
@@ -446,7 +482,7 @@ void draw_scene()
 		glBegin(GL_POINTS);
 		for (y = 0; y < HEIGHT; y++)
 		{
-			Vec3d color = computeColor(generateRay(x, y));
+			Vec3d color = computePixelColor(x, y);
 			color += Vec3d(ambient_light[0], ambient_light[1], ambient_light[2]);
 			color.clamped();
 			plot_pixel(x, y, color.x * 255, color.y * 255, color.z * 255);
