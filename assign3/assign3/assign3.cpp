@@ -14,6 +14,7 @@ Name: Yao Lin
 #include <string>
 #include <iostream>
 #include <vector>
+#include <random>
 
 #include "opencv2/core/core.hpp"
 #include "opencv2/core/utility.hpp"
@@ -28,10 +29,12 @@ Name: Yao Lin
 char* filename = 0;
 
 // Shading Mode Switch
-bool recursiveReflectionOn = false;
-bool antialiasingOn = false; // Supersampling: Multi-Sample Anti-Aliasing (MSAA)
-bool softShadowsOn = false;
-bool motionBlurOn = false;
+const bool recursiveReflectionOn = false; 
+const int maxReflection = 5;
+const bool antialiasingOn = false; // Supersampling: Multi-Sample Anti-Aliasing (MSAA)
+const int sampleRate = 10; 
+const bool softShadowsOn = false;
+const bool motionBlurOn = false;
 
 //different display modes
 #define MODE_DISPLAY 1
@@ -46,7 +49,7 @@ int mode = MODE_DISPLAY;
 #define FOV 60.0
 const double PI = 3.1415926;
 const double FURTHEST = -DBL_MAX;
-const double ZERO = DBL_MIN;
+const double EPSILON = DBL_MIN;
 
 unsigned char buffer[HEIGHT][WIDTH][3];
 
@@ -54,6 +57,7 @@ using std::cout;
 using std::endl;
 using std::clog;
 using std::vector;
+using std::rand;
 
 // OpenCV like Vec3d
 struct Vec3d
@@ -72,6 +76,10 @@ struct Vec3d
 		y -= v.y;
 		z -= v.z;
 		return *this;
+	}
+	friend Vec3d operator-(double c, const Vec3d& v)
+	{
+		return Vec3d(1.0 - v.x, 1.0 - v.y, 1.0 - v.z);
 	}
 	Vec3d operator+(const Vec3d& v) const { return Vec3d(x + v.x, y + v.y, z + v.z); }
 	Vec3d& operator+=(const Vec3d& v)
@@ -172,6 +180,16 @@ typedef struct Light
 {
 	double position[3];
 	double color[3];
+	Light() = default;
+	Light(double* pos, double* col)
+	{
+		position[0] = pos[0];
+		position[1] = pos[1];
+		position[2] = pos[2];
+		color[0] = col[0];
+		color[1] = col[1];
+		color[2] = col[2];
+	}
 } Light;
 
 
@@ -196,7 +214,7 @@ struct Ray
 		double delta = b * b - 4.0 * a * c;
 
 		// no hitPos
-		if (delta <= ZERO)  return false; 
+		if (delta <= EPSILON)  return false; 
 		double t1 = (-b + sqrt(delta)) / 2;
 		double t2 = (-b - sqrt(delta)) / 2;
 		// backward ray
@@ -224,7 +242,7 @@ struct Ray
 		Vec3d N = cross(B - A, C - A).normalized(); 
 		
 		// no intersection
-		if (abs(dot(N, dir)) <= ZERO) return false;
+		if (abs(dot(N, dir)) <= EPSILON) return false;
 		// compute hit point time
 		double hitTime = (dot(N, A) - dot(N, pos)) / dot(N, dir);
 
@@ -244,6 +262,7 @@ struct Ray
 Triangle triangles[MAX_TRIANGLES];
 Sphere spheres[MAX_SPHERES];
 Light lights[MAX_LIGHTS];
+vector<Light> myLights;
 double ambient_light[3];
 
 int num_triangles = 0;
@@ -301,7 +320,7 @@ Vec3d PhongShading(const Triangle& t, Vec3d& hitPos, const Light& l)
 	double gamma = 1 - alpha - beta;
 	// diffuse
 	Vec3d L = (lightPos - hitPos).normalized();
-	Vec3d N = alpha * A_N + beta * B_N + gamma * C_N;
+	Vec3d N = (alpha * A_N + beta * B_N + gamma * C_N).normalized(); // remember to normalized !!!!!!!!!!!!!!!!!!!!!!!
 	double LdotN = dot(L, N);
 	clamp(LdotN);
 	Vec3d kd = alpha * A_D + beta * B_D + gamma * C_D;
@@ -316,12 +335,11 @@ Vec3d PhongShading(const Triangle& t, Vec3d& hitPos, const Light& l)
 	return lightColor * kd * LdotN + ks * pow(RdotV, sep_exp);
 }
 
-Vec3d computeSpheresIntersection(const Ray& ray, Vec3d& color, bool &hitAnObject, Vec3d &hitPos)
+int computeSpheresIntersection(const Ray& ray, Vec3d& color, Vec3d &hitPos)
 {
-
+	Vec3d newHitPos; int hitSphere = -1;
 	for (int i = 0; i < num_spheres; ++i)
 	{
-		Vec3d newHitPos;
 		if (ray.getHitPosition(spheres[i], newHitPos) && newHitPos.z > hitPos.z)
 		{
 			//clog << "Hit Sphere: " << i << endl;
@@ -329,7 +347,7 @@ Vec3d computeSpheresIntersection(const Ray& ray, Vec3d& color, bool &hitAnObject
 			for (int j = 0; j < num_lights; ++j)
 			{
 				// determine if the hit point is in shadow
-				Vec3d lightPos(lights[j].position[0], lights[j].position[1], lights[j].position[2]);
+				Vec3d lightPos(myLights[j].position[0], myLights[j].position[1], myLights[j].position[2]);
 				Vec3d shadowRayDir = (lightPos - newHitPos).normalized();
 				Ray shadowRay(newHitPos, shadowRayDir);
 				bool inShadow = false;
@@ -354,20 +372,20 @@ Vec3d computeSpheresIntersection(const Ray& ray, Vec3d& color, bool &hitAnObject
 				}
 				// if not, use Phong shading
 				if (!inShadow)
-					color += PhongShading(spheres[i], newHitPos, lights[j]);
+					color += PhongShading(spheres[i], newHitPos, myLights[j]);
 			}
-			hitAnObject = true;
+			hitSphere = i;
 			hitPos = newHitPos;
 		}
 	}
-	return color;
+	return hitSphere;
 }
 
-Vec3d computeTrianglesIntersection(const Ray& ray, Vec3d& color, bool &hitAnObject, Vec3d& hitPos)
+int computeTrianglesIntersection(const Ray& ray, Vec3d& color, Vec3d& hitPos)
 {
+	Vec3d newHitPos; int hitTriangle = -1;
 	for (int i = 0; i < num_triangles; ++i)
 	{
-		Vec3d newHitPos;
 		if (ray.getHitPosition(triangles[i], newHitPos) && newHitPos.z > hitPos.z)
 		{
 			//clog << "Hit Triangles: " << i << endl;
@@ -375,7 +393,7 @@ Vec3d computeTrianglesIntersection(const Ray& ray, Vec3d& color, bool &hitAnObje
 			for (int j = 0; j < num_lights; ++j)
 			{
 				// determine if the hit point is in shadow
-				Vec3d lightPos(lights[j].position[0], lights[j].position[1], lights[j].position[2]);
+				Vec3d lightPos(myLights[j].position[0], myLights[j].position[1], myLights[j].position[2]);
 				Vec3d shadowRayDir = (lightPos - newHitPos).normalized();
 				Ray shadowRay(newHitPos, shadowRayDir);
 				bool inShadow = false;
@@ -400,28 +418,105 @@ Vec3d computeTrianglesIntersection(const Ray& ray, Vec3d& color, bool &hitAnObje
 				}
 				// if not, use Phong shading
 				if (!inShadow)
-					color += PhongShading(triangles[i], newHitPos, lights[j]);
+					color += PhongShading(triangles[i], newHitPos, myLights[j]);
 			}
-			hitAnObject = true;
+			hitTriangle = i;
 			hitPos = newHitPos;
 		}
 	}
-	return color;
+	return hitTriangle;
 }
 
 Vec3d computeRayColor(const Ray &ray)
 {
 	Vec3d color(0.0, 0.0, 0.0);
-	bool hitSphere = false, hitTriangle = false;
+	int hitSphere = -1, hitTriangle = -1;
 	Vec3d hitPos = Vec3d(0.0, 0.0, FURTHEST);
 
-	computeSpheresIntersection(ray, color, hitSphere, hitPos);
-	computeTrianglesIntersection(ray, color, hitTriangle, hitPos);
-
-	if (!hitSphere && !hitTriangle)
+	hitSphere = computeSpheresIntersection(ray, color, hitPos);
+	hitTriangle = computeTrianglesIntersection(ray, color, hitPos);
+	// if no hit
+	if (hitSphere == -1 && hitTriangle == -1)
+	{
 		return Vec3d(1.0, 1.0, 1.0);
+	}
+	// if hit an object
 	else
+	{
 		return color;
+	}
+}
+
+Vec3d recursivelyComputeRayColor(const Ray& ray, int reflectTime)
+{
+	Vec3d color(0.0, 0.0, 0.0);
+	if (reflectTime > maxReflection) return color;
+	int hitSphere = -1, hitTriangle = -1;
+	Vec3d hitPos = Vec3d(0.0, 0.0, FURTHEST);
+
+	hitSphere = computeSpheresIntersection(ray, color, hitPos);
+	hitTriangle = computeTrianglesIntersection(ray, color, hitPos);
+	// if no hit
+	if (hitSphere == -1 && hitTriangle == -1)
+	{
+		return Vec3d(1.0, 1.0, 1.0);
+	}
+	// if hit an object
+	// (1-ks1) * localPhongColor + ks1 * ((1-ks2) * localPhongColor2 + ks2 * (...)) + .....
+	else
+	{
+		Vec3d ks;
+		Ray reflectRay;
+		if (hitSphere != -1) 
+		{
+			Sphere s = spheres[hitSphere];
+			Vec3d spherePos(s.position[0], s.position[1], s.position[2]);
+			Vec3d L = -ray.dir;
+			Vec3d N = (hitPos - spherePos).normalized();
+			double LdotN = dot(L, N);
+			clamp(LdotN);
+			Vec3d kd(s.color_diffuse[0], s.color_diffuse[1], s.color_diffuse[2]);
+			// compute ks and reflect ray
+			ks = Vec3d(s.color_specular[0], s.color_specular[1], s.color_specular[2]);
+			Vec3d R = (N * (2.0 * (LdotN)) - L).normalized();
+			reflectRay = Ray(hitPos, R);
+			
+		}
+		else if (hitTriangle != -1)
+		{
+			Triangle t = triangles[hitTriangle];
+			Vec3d A_N(t.v[0].normal[0], t.v[0].normal[1], t.v[0].normal[2]);
+			Vec3d B_N(t.v[1].normal[0], t.v[1].normal[1], t.v[1].normal[2]);
+			Vec3d C_N(t.v[2].normal[0], t.v[2].normal[1], t.v[2].normal[2]);
+			Vec3d A_D(t.v[0].color_diffuse[0], t.v[0].color_diffuse[1], t.v[0].color_diffuse[2]);
+			Vec3d B_D(t.v[1].color_diffuse[0], t.v[1].color_diffuse[1], t.v[1].color_diffuse[2]);
+			Vec3d C_D(t.v[2].color_diffuse[0], t.v[2].color_diffuse[1], t.v[2].color_diffuse[2]);
+			Vec3d A_S(t.v[0].color_specular[0], t.v[0].color_specular[1], t.v[0].color_specular[2]);
+			Vec3d B_S(t.v[1].color_specular[0], t.v[1].color_specular[1], t.v[1].color_specular[2]);
+			Vec3d C_S(t.v[2].color_specular[0], t.v[2].color_specular[1], t.v[2].color_specular[2]);
+
+			// use barycentric coordinates to interpolate normal
+			Vec3d A(t.v[0].position[0], t.v[0].position[1], t.v[0].position[2]);
+			Vec3d B(t.v[1].position[0], t.v[1].position[1], t.v[1].position[2]);
+			Vec3d C(t.v[2].position[0], t.v[2].position[1], t.v[2].position[2]);
+			Vec3d P = hitPos;
+			double alpha = cross(P - C, P - B).length() / cross(B - A, C - A).length();
+			double beta = cross(P - A, P - C).length() / cross(B - A, C - A).length();
+			double gamma = 1 - alpha - beta;
+			// diffuse
+			Vec3d L = -ray.dir;
+			Vec3d N = (alpha * A_N + beta * B_N + gamma * C_N).normalized(); 
+			double LdotN = dot(L, N);
+			clamp(LdotN);
+			// compute ks and reflect ray
+			Vec3d ks = alpha * A_S + beta * B_S + gamma * C_S;
+			Vec3d R = (N * (2.0 * (LdotN)) - L).normalized();
+			reflectRay = Ray(hitPos, R);
+		}
+		double reflectRate = 0.5;
+		return (1.0 - ks) * color + reflectRate * ks * (recursivelyComputeRayColor(reflectRay, reflectTime + 1));
+	}
+		
 }
 
 Ray generateRay(double x, double y)
@@ -447,9 +542,9 @@ Ray generateRay(double x, double y)
 
 Vec3d computePixelColor(double x, double y)
 {
+	// use Multi-Sample Anti-Aliasing (MSAA) to do antialiasing
 	if (antialiasingOn)
 	{
-		int sampleRate = 3;
 		int samplePerPixel = sampleRate * sampleRate;
 		vector<Ray> rays(samplePerPixel);
 		Vec3d color(0.0, 0.0, 0.0);
@@ -461,20 +556,53 @@ Vec3d computePixelColor(double x, double y)
 				
 				double _x = x + unit * i + unit;
 				double _y = y + unit * j + unit;
-				color += computeRayColor(generateRay(_x, _y));
+				if (recursiveReflectionOn)
+					color += recursivelyComputeRayColor(generateRay(_x, _y), 0);
+				else
+					color += computeRayColor(generateRay(_x, _y));
 			}
 		}
 		return color / samplePerPixel;
 	}
 	else
 	{
-		return computeRayColor(generateRay(x+0.5, y+0.5));
+		if (recursiveReflectionOn)
+			return recursivelyComputeRayColor(generateRay(x + 0.5, y + 0.5), 0);
+		else
+			return computeRayColor(generateRay(x + 0.5, y + 0.5));
 	}
 
 }
 
 void draw_scene()
 {
+	// make every light from point light to a sizeable light
+	if (softShadowsOn)
+	{
+		double lightRadius = 0.02;
+		double subLightPerPointLight = 10;
+		vector<Light> tempLights = myLights;
+		myLights.clear();
+		for (int i = 0; i < num_lights; ++i)
+		{
+			clog << "Approximate light: " << i << endl;
+			
+			for (int j = 0; j < subLightPerPointLight; ++j)
+			{
+				Light newLight = Light(tempLights[i].position, tempLights[i].color);
+				newLight.position[0] += (double)rand() / RAND_MAX * lightRadius - lightRadius / 2.0;
+				cout << newLight.position[0] << ", ";
+				newLight.position[1] += (double)rand() / RAND_MAX * lightRadius - lightRadius / 2.0;
+				cout << newLight.position[1] << ", ";
+				newLight.position[2] += (double)rand() / RAND_MAX * lightRadius - lightRadius / 2.0;
+				cout << newLight.position[2] << endl;
+				newLight.color[0] /= subLightPerPointLight; newLight.color[1] /= subLightPerPointLight; newLight.color[2] /= subLightPerPointLight;
+				myLights.push_back(newLight);
+			}
+		}
+		num_lights *= subLightPerPointLight;
+	}
+
 	unsigned int x, y;
 	for (x = 0; x < WIDTH; x++)
 	{
@@ -657,6 +785,10 @@ int loadScene(char* argv)
 			printf("unknown type in scene description:\n%s\n", type);
 			exit(0);
 		}
+	}
+	for (int i = 0; i < num_lights; ++i)
+	{
+		myLights.push_back(lights[i]);
 	}
 	return 0;
 }
