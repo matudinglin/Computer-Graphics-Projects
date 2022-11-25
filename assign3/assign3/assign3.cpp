@@ -30,10 +30,11 @@ char* filename = 0;
 
 // Shading Mode Switch
 const bool recursiveReflectionOn = false; 
-const int maxReflection = 5;
+const int maxReflection = 2;
 const bool antialiasingOn = false; // Supersampling: Multi-Sample Anti-Aliasing (MSAA)
-const int sampleRate = 10; 
-const bool softShadowsOn = false;
+const int sampleRate = 5; 
+const bool softShadowsOn = true;
+int subLightPerPointLight = 100;
 const bool motionBlurOn = false;
 
 //different display modes
@@ -293,7 +294,7 @@ Vec3d PhongShading(const Sphere& s, Vec3d& hitPos, const Light& l)
 	double sep_exp = s.shininess;
 	// ambient is omitted since it cannot be added multiple times
 	// Phong shading
-	return lightColor * kd * LdotN + ks * pow(RdotV, sep_exp);
+	return lightColor * kd * LdotN + ks * pow(RdotV, sep_exp) / (double)subLightPerPointLight;
 }
 
 Vec3d PhongShading(const Triangle& t, Vec3d& hitPos, const Light& l)
@@ -332,7 +333,7 @@ Vec3d PhongShading(const Triangle& t, Vec3d& hitPos, const Light& l)
 	Vec3d ks = alpha * A_S + beta * B_S + gamma * C_S;
 	double sep_exp = alpha * t.v[0].shininess + beta * t.v[1].shininess + gamma * t.v[2].shininess;
 	// Phong shading
-	return lightColor * kd * LdotN + ks * pow(RdotV, sep_exp);
+	return lightColor * kd * LdotN + ks * pow(RdotV, sep_exp) / (double)subLightPerPointLight;
 }
 
 int computeSpheresIntersection(const Ray& ray, Vec3d& color, Vec3d &hitPos)
@@ -372,7 +373,9 @@ int computeSpheresIntersection(const Ray& ray, Vec3d& color, Vec3d &hitPos)
 				}
 				// if not, use Phong shading
 				if (!inShadow)
-					color += PhongShading(spheres[i], newHitPos, myLights[j]);
+				{
+					color += PhongShading(spheres[i], newHitPos, lights[j / subLightPerPointLight]);
+				}
 			}
 			hitSphere = i;
 			hitPos = newHitPos;
@@ -418,7 +421,9 @@ int computeTrianglesIntersection(const Ray& ray, Vec3d& color, Vec3d& hitPos)
 				}
 				// if not, use Phong shading
 				if (!inShadow)
-					color += PhongShading(triangles[i], newHitPos, myLights[j]);
+				{
+					color += PhongShading(triangles[i], newHitPos, lights[j / subLightPerPointLight]);
+				}
 			}
 			hitTriangle = i;
 			hitPos = newHitPos;
@@ -579,28 +584,33 @@ void draw_scene()
 	// make every light from point light to a sizeable light
 	if (softShadowsOn)
 	{
-		double lightRadius = 0.02;
-		double subLightPerPointLight = 10;
-		vector<Light> tempLights = myLights;
-		myLights.clear();
+		double lightRadius = 1;
 		for (int i = 0; i < num_lights; ++i)
 		{
-			clog << "Approximate light: " << i << endl;
-			
+			clog << "=============================== Approximate light: " << i << endl;
+			Light temp = lights[i];
 			for (int j = 0; j < subLightPerPointLight; ++j)
 			{
-				Light newLight = Light(tempLights[i].position, tempLights[i].color);
+				Light newLight = Light(temp.position, temp.color);
 				newLight.position[0] += (double)rand() / RAND_MAX * lightRadius - lightRadius / 2.0;
-				cout << newLight.position[0] << ", ";
 				newLight.position[1] += (double)rand() / RAND_MAX * lightRadius - lightRadius / 2.0;
-				cout << newLight.position[1] << ", ";
 				newLight.position[2] += (double)rand() / RAND_MAX * lightRadius - lightRadius / 2.0;
-				cout << newLight.position[2] << endl;
-				newLight.color[0] /= subLightPerPointLight; newLight.color[1] /= subLightPerPointLight; newLight.color[2] /= subLightPerPointLight;
+				cout << "Position: " << newLight.position[0] << ", " << newLight.position[1] << ", " << newLight.position[2] << endl;
+				//newLight.color[0] /= (double)subLightPerPointLight; newLight.color[1] /= (double)subLightPerPointLight; newLight.color[2] /= (double)subLightPerPointLight;
+				cout << "Color: " << newLight.color[0] << ", " << newLight.color[1] << ", " << newLight.color[2] << endl;
 				myLights.push_back(newLight);
 			}
+			lights[i].color[0] /= (double)subLightPerPointLight; lights[i].color[1] /= (double)subLightPerPointLight; lights[i].color[2] /= (double)subLightPerPointLight;
 		}
 		num_lights *= subLightPerPointLight;
+	}
+	else
+	{
+		subLightPerPointLight = 1;
+		for (int i = 0; i < num_lights; ++i)
+		{
+			myLights.push_back(lights[i]);
+		}
 	}
 
 	unsigned int x, y;
@@ -785,10 +795,6 @@ int loadScene(char* argv)
 			printf("unknown type in scene description:\n%s\n", type);
 			exit(0);
 		}
-	}
-	for (int i = 0; i < num_lights; ++i)
-	{
-		myLights.push_back(lights[i]);
 	}
 	return 0;
 }
