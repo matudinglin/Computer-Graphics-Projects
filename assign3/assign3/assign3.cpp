@@ -29,13 +29,12 @@ Name: Yao Lin
 char* filename = 0;
 
 // Shading Mode Switch
-const bool recursiveReflectionOn = false; 
-const int maxReflection = 2;
+const bool recursiveReflectionOn = false;
+const int maxReflection = 1;
 const bool antialiasingOn = false; // Supersampling: Multi-Sample Anti-Aliasing (MSAA)
-const int sampleRate = 5; 
-const bool softShadowsOn = true;
+const int sampleRate = 3; 
+const bool softShadowsOn = false;
 int subLightPerPointLight = 100;
-const bool motionBlurOn = false;
 
 //different display modes
 #define MODE_DISPLAY 1
@@ -218,6 +217,7 @@ struct Ray
 		if (delta <= EPSILON)  return false; 
 		double t1 = (-b + sqrt(delta)) / 2;
 		double t2 = (-b - sqrt(delta)) / 2;
+
 		// backward ray
 		if (t1 <= 0 && t2 <= 0)
 		{
@@ -247,7 +247,7 @@ struct Ray
 		// compute hit point time
 		double hitTime = (dot(N, A) - dot(N, pos)) / dot(N, dir);
 
-		// hitPos is not on the plane
+		// hit piont is backward
 		if (hitTime <= 0) return false;
 
 		// hitPos is on the plane
@@ -336,6 +336,7 @@ Vec3d PhongShading(const Triangle& t, Vec3d& hitPos, const Light& l)
 	return lightColor * kd * LdotN + ks * pow(RdotV, sep_exp) / (double)subLightPerPointLight;
 }
 
+// compute ray with all spheres, compute shadow and phong shading
 int computeSpheresIntersection(const Ray& ray, Vec3d& color, Vec3d &hitPos)
 {
 	Vec3d newHitPos; int hitSphere = -1;
@@ -384,6 +385,7 @@ int computeSpheresIntersection(const Ray& ray, Vec3d& color, Vec3d &hitPos)
 	return hitSphere;
 }
 
+// compute ray with all triangles, compute shadow and phong shading
 int computeTrianglesIntersection(const Ray& ray, Vec3d& color, Vec3d& hitPos)
 {
 	Vec3d newHitPos; int hitTriangle = -1;
@@ -432,6 +434,7 @@ int computeTrianglesIntersection(const Ray& ray, Vec3d& color, Vec3d& hitPos)
 	return hitTriangle;
 }
 
+// compute ray color
 Vec3d computeRayColor(const Ray &ray)
 {
 	Vec3d color(0.0, 0.0, 0.0);
@@ -452,6 +455,7 @@ Vec3d computeRayColor(const Ray &ray)
 	}
 }
 
+// compute ray color recursively
 Vec3d recursivelyComputeRayColor(const Ray& ray, int reflectTime)
 {
 	Vec3d color(0.0, 0.0, 0.0);
@@ -518,12 +522,13 @@ Vec3d recursivelyComputeRayColor(const Ray& ray, int reflectTime)
 			Vec3d R = (N * (2.0 * (LdotN)) - L).normalized();
 			reflectRay = Ray(hitPos, R);
 		}
-		double reflectRate = 0.5;
-		return (1.0 - ks) * color + reflectRate * ks * (recursivelyComputeRayColor(reflectRay, reflectTime + 1));
+		double reflectRate = 0.1;
+		return (1.0 - ks) * color * (1.0 - reflectRate) + reflectRate * ks * recursivelyComputeRayColor(reflectRay, reflectTime + 1);
 	}
 		
 }
 
+// generate a ray from a coordinate
 Ray generateRay(double x, double y)
 {
 	// The aspect ratio of an image is the ratio of its width to its height
@@ -545,6 +550,7 @@ Ray generateRay(double x, double y)
 	return Ray(pos, dir);
 }
 
+// compute pixel color at a coordinate
 Vec3d computePixelColor(double x, double y)
 {
 	// use Multi-Sample Anti-Aliasing (MSAA) to do antialiasing
@@ -584,7 +590,7 @@ void draw_scene()
 	// make every light from point light to a sizeable light
 	if (softShadowsOn)
 	{
-		double lightRadius = 1;
+		double lightRadius = 0.2;
 		for (int i = 0; i < num_lights; ++i)
 		{
 			clog << "=============================== Approximate light: " << i << endl;
