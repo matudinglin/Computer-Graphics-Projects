@@ -29,8 +29,8 @@ Name: Yao Lin
 char* filename = 0;
 
 // Shading Mode Switch
-const bool recursiveReflectionOn = false;
-const int maxReflection = 1;
+const bool recursiveReflectionOn = true;
+const int maxReflection = 2;
 const bool antialiasingOn = false; // Supersampling: Multi-Sample Anti-Aliasing (MSAA)
 const int sampleRate = 3; 
 const bool softShadowsOn = false;
@@ -49,7 +49,7 @@ int mode = MODE_DISPLAY;
 #define FOV 60.0
 const double PI = 3.1415926;
 const double FURTHEST = -DBL_MAX;
-const double EPSILON = DBL_MIN;
+const double EPSILON = 1e-10; // Important!
 
 unsigned char buffer[HEIGHT][WIDTH][3];
 
@@ -214,7 +214,7 @@ struct Ray
 		double delta = b * b - 4.0 * a * c;
 
 		// no hitPos
-		if (delta <= EPSILON)  return false; 
+		if (delta <= -EPSILON)  return false; 
 		double t1 = (-b + sqrt(delta)) / 2;
 		double t2 = (-b - sqrt(delta)) / 2;
 
@@ -466,64 +466,75 @@ Vec3d recursivelyComputeRayColor(const Ray& ray, int reflectTime)
 	hitSphere = computeSpheresIntersection(ray, color, hitPos);
 	hitTriangle = computeTrianglesIntersection(ray, color, hitPos);
 	// if no hit
-	if (hitSphere == -1 && hitTriangle == -1)
-	{
-		return Vec3d(1.0, 1.0, 1.0);
-	}
-	// if hit an object
-	// (1-ks1) * localPhongColor + ks1 * ((1-ks2) * localPhongColor2 + ks2 * (...)) + .....
-	else
-	{
-		Vec3d ks;
-		Ray reflectRay;
-		if (hitSphere != -1) 
-		{
-			Sphere s = spheres[hitSphere];
-			Vec3d spherePos(s.position[0], s.position[1], s.position[2]);
-			Vec3d L = -ray.dir;
-			Vec3d N = (hitPos - spherePos).normalized();
-			double LdotN = dot(L, N);
-			clamp(LdotN);
-			Vec3d kd(s.color_diffuse[0], s.color_diffuse[1], s.color_diffuse[2]);
-			// compute ks and reflect ray
-			ks = Vec3d(s.color_specular[0], s.color_specular[1], s.color_specular[2]);
-			Vec3d R = (N * (2.0 * (LdotN)) - L).normalized();
-			reflectRay = Ray(hitPos, R);
-			
-		}
-		else if (hitTriangle != -1)
-		{
-			Triangle t = triangles[hitTriangle];
-			Vec3d A_N(t.v[0].normal[0], t.v[0].normal[1], t.v[0].normal[2]);
-			Vec3d B_N(t.v[1].normal[0], t.v[1].normal[1], t.v[1].normal[2]);
-			Vec3d C_N(t.v[2].normal[0], t.v[2].normal[1], t.v[2].normal[2]);
-			Vec3d A_D(t.v[0].color_diffuse[0], t.v[0].color_diffuse[1], t.v[0].color_diffuse[2]);
-			Vec3d B_D(t.v[1].color_diffuse[0], t.v[1].color_diffuse[1], t.v[1].color_diffuse[2]);
-			Vec3d C_D(t.v[2].color_diffuse[0], t.v[2].color_diffuse[1], t.v[2].color_diffuse[2]);
-			Vec3d A_S(t.v[0].color_specular[0], t.v[0].color_specular[1], t.v[0].color_specular[2]);
-			Vec3d B_S(t.v[1].color_specular[0], t.v[1].color_specular[1], t.v[1].color_specular[2]);
-			Vec3d C_S(t.v[2].color_specular[0], t.v[2].color_specular[1], t.v[2].color_specular[2]);
 
-			// use barycentric coordinates to interpolate normal
-			Vec3d A(t.v[0].position[0], t.v[0].position[1], t.v[0].position[2]);
-			Vec3d B(t.v[1].position[0], t.v[1].position[1], t.v[1].position[2]);
-			Vec3d C(t.v[2].position[0], t.v[2].position[1], t.v[2].position[2]);
-			Vec3d P = hitPos;
-			double alpha = cross(P - C, P - B).length() / cross(B - A, C - A).length();
-			double beta = cross(P - A, P - C).length() / cross(B - A, C - A).length();
-			double gamma = 1 - alpha - beta;
-			// diffuse
-			Vec3d L = -ray.dir;
-			Vec3d N = (alpha * A_N + beta * B_N + gamma * C_N).normalized(); 
-			double LdotN = dot(L, N);
-			clamp(LdotN);
-			// compute ks and reflect ray
-			Vec3d ks = alpha * A_S + beta * B_S + gamma * C_S;
-			Vec3d R = (N * (2.0 * (LdotN)) - L).normalized();
-			reflectRay = Ray(hitPos, R);
+	Vec3d ks;
+	Ray reflectRay;
+	if (hitSphere != -1) 
+	{
+		Sphere s = spheres[hitSphere];
+		Vec3d spherePos(s.position[0], s.position[1], s.position[2]);
+		Vec3d L = -ray.dir;
+		Vec3d N = (hitPos - spherePos).normalized();
+		double LdotN = dot(L, N);
+		clamp(LdotN);
+		Vec3d kd(s.color_diffuse[0], s.color_diffuse[1], s.color_diffuse[2]);
+		// compute ks and reflect ray
+		ks = Vec3d(s.color_specular[0], s.color_specular[1], s.color_specular[2]);
+		Vec3d R = (N * (2.0 * (LdotN)) - L).normalized();
+		reflectRay = Ray(hitPos + (R * EPSILON), R); // Avoid intersect with itself
+			
+	}
+	else if (hitTriangle != -1)
+	{
+		Triangle t = triangles[hitTriangle];
+		Vec3d A_N(t.v[0].normal[0], t.v[0].normal[1], t.v[0].normal[2]);
+		Vec3d B_N(t.v[1].normal[0], t.v[1].normal[1], t.v[1].normal[2]);
+		Vec3d C_N(t.v[2].normal[0], t.v[2].normal[1], t.v[2].normal[2]);
+		Vec3d A_D(t.v[0].color_diffuse[0], t.v[0].color_diffuse[1], t.v[0].color_diffuse[2]);
+		Vec3d B_D(t.v[1].color_diffuse[0], t.v[1].color_diffuse[1], t.v[1].color_diffuse[2]);
+		Vec3d C_D(t.v[2].color_diffuse[0], t.v[2].color_diffuse[1], t.v[2].color_diffuse[2]);
+		Vec3d A_S(t.v[0].color_specular[0], t.v[0].color_specular[1], t.v[0].color_specular[2]);
+		Vec3d B_S(t.v[1].color_specular[0], t.v[1].color_specular[1], t.v[1].color_specular[2]);
+		Vec3d C_S(t.v[2].color_specular[0], t.v[2].color_specular[1], t.v[2].color_specular[2]);
+
+		// use barycentric coordinates to interpolate normal
+		Vec3d A(t.v[0].position[0], t.v[0].position[1], t.v[0].position[2]);
+		Vec3d B(t.v[1].position[0], t.v[1].position[1], t.v[1].position[2]);
+		Vec3d C(t.v[2].position[0], t.v[2].position[1], t.v[2].position[2]);
+		Vec3d P = hitPos;
+		double alpha = cross(P - C, P - B).length() / cross(B - A, C - A).length();
+		double beta = cross(P - A, P - C).length() / cross(B - A, C - A).length();
+		double gamma = 1 - alpha - beta;
+		// diffuse
+		Vec3d L = -ray.dir;
+		Vec3d N = (alpha * A_N + beta * B_N + gamma * C_N).normalized(); 
+		double LdotN = dot(L, N);
+		clamp(LdotN);
+		// compute ks and reflect ray
+		Vec3d ks = alpha * A_S + beta * B_S + gamma * C_S;
+		Vec3d R = (N * (2.0 * (LdotN)) - L).normalized();
+		reflectRay = Ray(hitPos + (R * EPSILON), R); // Avoid intersect with itself
+	}
+	double reflectRate = 0.05;
+	if (reflectTime == 0) 
+	{
+		if (hitSphere == -1 && hitTriangle== -1)  
+			return Vec3d(1.0, 1.0, 1.0);
+		else  
+		{
+			color = (1.0 - reflectRate) * color + reflectRate * recursivelyComputeRayColor(reflectRay, reflectTime);
+			return color + recursivelyComputeRayColor(reflectRay, reflectTime + 1) * (reflectRate * 2.0);
 		}
-		double reflectRate = 0.1;
-		return (1.0 - ks) * color * (1.0 - reflectRate) + reflectRate * ks * recursivelyComputeRayColor(reflectRay, reflectTime + 1);
+	}
+	else 
+	{
+		if (hitSphere == -1 && hitTriangle == -1) 
+			return Vec3d(0.0, 0.0, 0.0);
+		else
+		{
+			color = (1.0 - ks) * color + ks * recursivelyComputeRayColor(reflectRay, reflectTime + 1);
+			return color * (1.0 - reflectRate) + recursivelyComputeRayColor(reflectRay, reflectTime + 2) * (reflectRate);
+		}
 	}
 		
 }
