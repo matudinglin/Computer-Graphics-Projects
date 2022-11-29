@@ -30,11 +30,11 @@ char* filename = 0;
 
 // Shading Mode Switch
 const bool recursiveReflectionOn = true;
-const int maxReflection = 2;
-const bool antialiasingOn = false; // Supersampling: Multi-Sample Anti-Aliasing (MSAA)
-const int sampleRate = 3; 
-const bool softShadowsOn = false;
-int subLightPerPointLight = 100;
+const int maxReflection = 3;
+const bool antialiasingOn = true; // Supersampling: Multi-Sample Anti-Aliasing (MSAA)
+const int sampleRate = 2; 
+const bool softShadowsOn = true;
+int subLightPerPointLight = 50;
 
 //different display modes
 #define MODE_DISPLAY 1
@@ -463,11 +463,11 @@ Vec3d recursivelyComputeRayColor(const Ray& ray, int reflectTime)
 	int hitSphere = -1, hitTriangle = -1;
 	Vec3d hitPos = Vec3d(0.0, 0.0, FURTHEST);
 
+	// do intersection
 	hitSphere = computeSpheresIntersection(ray, color, hitPos);
 	hitTriangle = computeTrianglesIntersection(ray, color, hitPos);
-	// if no hit
 
-	Vec3d ks;
+	Vec3d ks = Vec3d();
 	Ray reflectRay;
 	if (hitSphere != -1) 
 	{
@@ -515,7 +515,9 @@ Vec3d recursivelyComputeRayColor(const Ray& ray, int reflectTime)
 		Vec3d R = (N * (2.0 * (LdotN)) - L).normalized();
 		reflectRay = Ray(hitPos + (R * EPSILON), R); // Avoid intersect with itself
 	}
-	double reflectRate = 0.05;
+	double reflectRate = 0.1;
+	
+	// frist ray
 	if (reflectTime == 0) 
 	{
 		if (hitSphere == -1 && hitTriangle== -1)  
@@ -523,17 +525,18 @@ Vec3d recursivelyComputeRayColor(const Ray& ray, int reflectTime)
 		else  
 		{
 			color = (1.0 - reflectRate) * color + reflectRate * recursivelyComputeRayColor(reflectRay, reflectTime);
-			return color + recursivelyComputeRayColor(reflectRay, reflectTime + 1) * (reflectRate * 2.0);
+			return color + reflectRate * recursivelyComputeRayColor(reflectRay, reflectTime + 1);
 		}
 	}
+	// reflection ray
 	else 
 	{
 		if (hitSphere == -1 && hitTriangle == -1) 
 			return Vec3d(0.0, 0.0, 0.0);
 		else
 		{
-			color = (1.0 - ks) * color + ks * recursivelyComputeRayColor(reflectRay, reflectTime + 1);
-			return color * (1.0 - reflectRate) + recursivelyComputeRayColor(reflectRay, reflectTime + 2) * (reflectRate);
+			color = (1.0 - reflectRate) * ((1.0 - ks) * color + ks * recursivelyComputeRayColor(reflectRay, reflectTime + 1));
+			return color + reflectRate * recursivelyComputeRayColor(reflectRay, reflectTime + 2);
 		}
 	}
 		
@@ -601,7 +604,7 @@ void draw_scene()
 	// make every light from point light to a sizeable light
 	if (softShadowsOn)
 	{
-		double lightRadius = 0.2;
+		double lightRadius = 1.0;
 		for (int i = 0; i < num_lights; ++i)
 		{
 			clog << "=============================== Approximate light: " << i << endl;

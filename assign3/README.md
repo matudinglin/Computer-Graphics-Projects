@@ -44,12 +44,13 @@ Render 5 extra scenes to show features for extra credits.
   - table scene with antialiasing feature.
 - ```./RESULTS/table-result-softShadowOn100.jpg```
   - table scene with soft shadow feature.
-- ```./RESULTS/table-result-softShadowOn50-recursiveReflectionOn2-antialiasingOn2x2.jpg```
+- ```./RESULTS/table-result-softShadowOn100-recursiveReflectionOn3-antialiasingOn2x2.jpg```
   - table scene with antialiasing, soft shadow and recursive reflection features.
-- ```./RESULTS/test2-result-recursiveReflectionOn3.jpg```
-  - test2 scene with recursive reflection feature.
-- ```./RESULTStest2-result-softShadowOn100-recursiveReflectionOn3-antialiasingOn3x3.jpg```
-  - test2 scene with antialiasing, soft shadow and recursive reflection features.
+- ```./RESULTS/spheres-result-recursiveReflectionOn5.jpg```
+  - spheres scene with recursive reflection feature.
+- ```./RESULTS/SIGGRAPH-result-softShadowOn100-recursiveReflectionOn3-antialiasingOn2x2.jpg```
+  - SIGGRAPH scene with antialiasing, soft shadow and recursive reflection features.
+
 
 # IMPLEMENTATION
 ## Structures & helper Functions
@@ -206,13 +207,8 @@ lightColor * (kd * (L dot N) + ks * (R dot V) ^ α)***
       if (reflectTime > maxReflection) return color;
       computeSpheresIntersection(ray, color, hitPos);
       computeTrianglesIntersection(ray, color, hitPos);
-      if (no hit) 
-        return background color;
-      else
-      {
-        compute ks and reflectRay from the hit object;
-        color = (1.0 - ks) * color + ks * recursivelyComputeRayColor(reflectRay, reflectTime + 1);
-      }
+      compute ks and reflectRay;
+      recursively call function and compute color;
     }
   ```
 - Set a reflect rate to control the color influence from the reflection.
@@ -230,3 +226,4 @@ lightColor * (kd * (L dot N) + ks * (R dot V) ^ α)***
     }
   ```
 - Then doing the normal shadow ray to every new subLight to compute the shadow.
+
